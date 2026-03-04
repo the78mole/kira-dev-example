@@ -1,0 +1,98 @@
+# KAS configuration for AMD Kria K26 Starter Kit (SM-K26-XCL2GI)
+# Reference: https://kas.readthedocs.io/en/latest/userguide.html
+#
+# Build with:
+#   kas build kas/k26-smk.yml
+#
+# The "mickledore" branch is the latest stable Yocto release that has
+# official AMD/Xilinx BSP support for the Kria K26 SOM.
+
+header:
+  version: 14
+
+machine: k26-smk
+distro: poky
+target: petalinux-image-minimal
+
+build_system: openembedded
+
+# ── Build directory configuration ────────────────────────────────────────────
+build_dir: build
+
+# ── Environment / local.conf variables ───────────────────────────────────────
+local_conf_header:
+  meta-xilinx: |
+    # AMD Xilinx-specific settings
+    XILINX_BOARD_FAMILY = "k26"
+    # Enable the SOM carrier card
+    SMK_CARRIER_CARD = "sm-k26-xcl2gi"
+
+local_conf_footer:
+  general: |
+    # Parallelism: adjust to your machine (number of CPU cores)
+    BB_NUMBER_THREADS ?= "${@oe.utils.cpu_count()}"
+    PARALLEL_MAKE ?= "-j ${@oe.utils.cpu_count()}"
+
+    # Download directory (mapped to a Docker volume in devcontainer.json)
+    DL_DIR ?= "${TOPDIR}/../downloads"
+
+    # Shared-state cache directory
+    SSTATE_DIR ?= "${TOPDIR}/sstate-cache"
+
+    # Add additional packages to the image here:
+    # IMAGE_INSTALL:append = " htop vim"
+
+    # Include debug tools in the image (comment out for production)
+    # EXTRA_IMAGE_FEATURES += "debug-tweaks tools-debug"
+
+    # Package format
+    PACKAGE_CLASSES ?= "package_rpm"
+
+    # SDK target architecture
+    SDKMACHINE ?= "x86_64"
+
+# ── Yocto / OE layers ────────────────────────────────────────────────────────
+repos:
+  # OpenEmbedded Core (provides the base build system and recipes)
+  openembedded-core:
+    url: https://git.openembedded.org/openembedded-core
+    refspec: mickledore
+    layers:
+      meta:
+
+  # meta-openembedded collection (networking, python, multimedia extras)
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    refspec: mickledore
+    layers:
+      meta-oe:
+      meta-python:
+      meta-networking:
+      meta-filesystems:
+
+  # AMD/Xilinx BSP layers
+  meta-xilinx:
+    url: https://github.com/Xilinx/meta-xilinx
+    refspec: mickledore
+    layers:
+      meta-xilinx-core:
+      meta-xilinx-standalone:
+
+  meta-xilinx-tools:
+    url: https://github.com/Xilinx/meta-xilinx-tools
+    refspec: mickledore
+    layers:
+      .:
+
+  # Kria-specific BSP layer (device trees, firmware, xmutil recipes)
+  meta-kria:
+    url: https://github.com/Xilinx/meta-kria
+    refspec: mickledore
+    layers:
+      .:
+
+  # Customer application layer (local, not fetched from remote)
+  meta-customer-app:
+    path: layers/meta-customer-app
+    layers:
+      .:
