@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-common-dev \
     libegl1-mesa \
     libgles2-mesa-dev \
+    libtinfo5 \
+    libncurses5 \
     lz4 \
     zstd \
     file \
@@ -37,8 +39,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     curl \
     ca-certificates \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Locale: Yocto requires en_US.UTF-8 ──────────────────────────────────────
 RUN locale-gen en_US.UTF-8
@@ -50,9 +52,9 @@ RUN pip3 install --no-cache-dir kas
 
 # ── Non-root user "builder" (UID 1000) – BitBake refuses to run as root ──────
 RUN groupadd -g 1000 builder \
- && useradd -m -u 1000 -g 1000 -s /bin/bash builder \
- && echo "builder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/builder \
- && chmod 0440 /etc/sudoers.d/builder
+    && useradd -m -u 1000 -g 1000 -s /bin/bash builder \
+    && echo "builder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/builder \
+    && chmod 0440 /etc/sudoers.d/builder
 
 # ── Switch to builder user ───────────────────────────────────────────────────
 USER builder

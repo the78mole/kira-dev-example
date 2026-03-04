@@ -2,6 +2,15 @@
 build/
 downloads/
 sstate-cache/
+tmp/
+
+# KAS layer checkouts (local workdirs)
+poky/
+openembedded-core/
+meta-openembedded/
+meta-xilinx/
+meta-xilinx-tools/
+meta-kria/
 
 # BitBake lock file
 build/bitbake.lock
@@ -26,4 +35,4 @@ __pycache__/
 
 # ── Temporary / log files ────────────────────────────────────────────────────
 *.log
-tmp/
+TODO.md

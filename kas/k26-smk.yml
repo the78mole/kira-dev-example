@@ -4,20 +4,17 @@
 # Build with:
 #   kas build kas/k26-smk.yml
 #
-# The "mickledore" branch is the latest stable Yocto release that has
-# official AMD/Xilinx BSP support for the Kria K26 SOM.
+# This configuration uses the "langdale" branch because the selected
+# meta-kria release line is compatible with langdale.
 
 header:
   version: 14
 
 machine: k26-smk
 distro: poky
-target: petalinux-image-minimal
+target: core-image-minimal
 
 build_system: openembedded
-
-# ── Build directory configuration ────────────────────────────────────────────
-build_dir: build
 
 # ── Environment / local.conf variables ───────────────────────────────────────
 local_conf_header:
@@ -26,12 +23,29 @@ local_conf_header:
     XILINX_BOARD_FAMILY = "k26"
     # Enable the SOM carrier card
     SMK_CARRIER_CARD = "sm-k26-xcl2gi"
-
-local_conf_footer:
+    # Accept Xilinx-licensed components (e.g. ZynqMP pmu-rom for QEMU)
+    LICENSE_FLAGS_ACCEPTED:append = " xilinx"
+    # Provide defaults expected by bootbin version metadata recipes
+    XILINX_VER_MAIN ?= "2023.2"
+    XILINX_VER_UPDATE ?= "release"
+    XILINX_VER_BUILD ?= ""
   general: |
     # Parallelism: adjust to your machine (number of CPU cores)
     BB_NUMBER_THREADS ?= "${@oe.utils.cpu_count()}"
     PARALLEL_MAKE ?= "-j ${@oe.utils.cpu_count()}"
+
+    # Allow overriding build paths and license flags from the environment
+    BB_ENV_PASSTHROUGH_ADDITIONS:append = " KIRA_BITBAKE_CACHE_DIR XSCT_STAGING_DIR XSCT_DLDIR DL_DIR SSTATE_DIR TMPDIR LICENSE_FLAGS_ACCEPTED"
+
+    # BitBake cache root (configurable). In Codespaces default to /tmp.
+    # Override by setting KIRA_BITBAKE_CACHE_DIR before running kas.
+    KIRA_BITBAKE_CACHE_DIR ?= "/tmp/bitbake-cache"
+    CACHE = "${KIRA_BITBAKE_CACHE_DIR}/cache/${TCMODE}-${TCLIBC}${@['', '/' + str(d.getVar('MACHINE'))][bool(d.getVar('MACHINE'))]}${@['', '/' + str(d.getVar('SDKMACHINE'))][bool(d.getVar('SDKMACHINE'))]}"
+    PERSISTENT_DIR = "${KIRA_BITBAKE_CACHE_DIR}/persistent"
+
+    # Keep the large XSCT tool extraction out of the workspace
+    XSCT_STAGING_DIR ?= "/tmp/yocto-xsct"
+    XSCT_DLDIR ?= "${DL_DIR}/xsct"
 
     # Download directory (mapped to a Docker volume in devcontainer.json)
     DL_DIR ?= "${TOPDIR}/../downloads"
@@ -46,24 +60,29 @@ local_conf_footer:
     # EXTRA_IMAGE_FEATURES += "debug-tweaks tools-debug"
 
     # Package format
-    PACKAGE_CLASSES ?= "package_rpm"
+    PACKAGE_CLASSES ?= "package_ipk"
+
+    # Work around kria-image-initramfs rootfs package conflict
+    # (ca-certificates vs openssl on /etc/ssl when weak deps are pulled in).
+    NO_RECOMMENDATIONS:pn-kria-image-initramfs = "1"
 
     # SDK target architecture
     SDKMACHINE ?= "x86_64"
 
 # ── Yocto / OE layers ────────────────────────────────────────────────────────
 repos:
-  # OpenEmbedded Core (provides the base build system and recipes)
-  openembedded-core:
-    url: https://git.openembedded.org/openembedded-core
-    refspec: mickledore
+  # Poky (includes OE-Core, BitBake and poky distro metadata)
+  poky:
+    url: https://git.yoctoproject.org/poky
+    refspec: langdale
     layers:
       meta:
+      meta-poky:
 
   # meta-openembedded collection (networking, python, multimedia extras)
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
-    refspec: mickledore
+    refspec: langdale
     layers:
       meta-oe:
       meta-python:
@@ -73,21 +92,21 @@ repos:
   # AMD/Xilinx BSP layers
   meta-xilinx:
     url: https://github.com/Xilinx/meta-xilinx
-    refspec: mickledore
+    refspec: langdale
     layers:
       meta-xilinx-core:
       meta-xilinx-standalone:
 
   meta-xilinx-tools:
     url: https://github.com/Xilinx/meta-xilinx-tools
-    refspec: mickledore
+    refspec: langdale
     layers:
       .:
 
   # Kria-specific BSP layer (device trees, firmware, xmutil recipes)
   meta-kria:
     url: https://github.com/Xilinx/meta-kria
-    refspec: mickledore
+    refspec: rel-v2023.2
     layers:
       .:
 

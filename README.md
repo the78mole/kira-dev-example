@@ -38,7 +38,9 @@ kira-dev-example/
 ├── layers/
 │   └── meta-customer-app/  # Custom Yocto layer template
 ├── scripts/
-│   └── flash-sd.sh         # Helper: write .wic image to SD card
+│   ├── build-xilinx-image.sh      # Reproducible build wrapper (incl. license gate)
+│   ├── cleanup-yocto-workspace.sh # Remove local build artefacts / stale checkouts
+│   └── flash-sd.sh                # Helper: write .wic image to SD card
 └── README.md
 ```
 
@@ -75,20 +77,28 @@ drop you into a fully configured shell as the `builder` user.
 Inside the Dev Container terminal:
 
 ```bash
-kas build kas/k26-smk.yml
+ACCEPT_XILINX_LICENSE=1 ./scripts/build-xilinx-image.sh
 ```
 
-KAS will:
-1. Clone `openembedded-core`, `meta-openembedded`, `meta-xilinx`,
-   `meta-xilinx-tools`, and `meta-kria` at the `mickledore` branch.
+The script:
+1. Enforces explicit Xilinx license acknowledgement (`ACCEPT_XILINX_LICENSE=1`).
+2. Exports `LICENSE_FLAGS_ACCEPTED` with `xilinx`.
+3. Uses `/tmp` defaults for large Yocto directories (`DL_DIR`, `SSTATE_DIR`, `TMPDIR`, XSCT staging).
+4. Runs `kas build kas/k26-smk.yml`.
+
+KAS then will:
+1. Clone `poky`, `meta-openembedded`, `meta-xilinx`,
+  `meta-xilinx-tools` (all on `langdale`) and `meta-kria` (`rel-v2023.2`).
 2. Generate `build/conf/bblayers.conf` and `build/conf/local.conf`.
-3. Launch BitBake to build `petalinux-image-minimal` for `k26-smk`.
+3. Launch BitBake to build `core-image-minimal` for `k26-smk`.
 
-The resulting image is written to:
+With default settings, the resulting image is written to:
 
 ```
-build/tmp/deploy/images/k26-smk/petalinux-image-minimal-k26-smk.wic.bz2
+/tmp/yocto-tmp/deploy/images/k26-smk/core-image-minimal-k26-smk.wic.bz2
 ```
+
+If you override `TMPDIR`, artifacts will appear under `${TMPDIR}/deploy/images/k26-smk/`.
 
 > **Note:** A full build takes 2–4 hours on an 8-core machine.
 > Subsequent builds reuse the `sstate-cache` and are much faster.
@@ -101,7 +111,7 @@ build/tmp/deploy/images/k26-smk/petalinux-image-minimal-k26-smk.wic.bz2
 
 ```bash
 # Decompress and write in one step (replace /dev/sdX with your SD card device)
-bzcat build/tmp/deploy/images/k26-smk/petalinux-image-minimal-k26-smk.wic.bz2 \
+bzcat /tmp/yocto-tmp/deploy/images/k26-smk/core-image-minimal-k26-smk.wic.bz2 \
     | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 sudo sync
 ```
@@ -110,7 +120,7 @@ Or use the helper script (validates the device and asks for confirmation):
 
 ```bash
 ./scripts/flash-sd.sh \
-    build/tmp/deploy/images/k26-smk/petalinux-image-minimal-k26-smk.wic.bz2 \
+  /tmp/yocto-tmp/deploy/images/k26-smk/core-image-minimal-k26-smk.wic.bz2 \
     /dev/sdX
 ```
 
@@ -158,12 +168,89 @@ xmutil loadapp <design-name>
 
 ## Customisation
 
+### BitBake-Cache im Dev Container (Linux-Host teilen)
+
+Der Build nutzt konfigurierbare Pfade für große Yocto-Artefakte:
+
+- `KIRA_BITBAKE_CACHE_DIR` (BitBake cache / persistent)
+- `DL_DIR` (Downloads)
+- `SSTATE_DIR` (Shared state)
+- `TMPDIR` (Workdir und Deploy-Artefakte)
+- `XSCT_STAGING_DIR` (XSCT-Entpackbereich)
+
+Wenn nichts gesetzt ist, werden standardmäßig `/tmp`-Pfade genutzt.
+
+Für einen gemeinsam genutzten Cache auf einem Linux-Host:
+
+1. Host-Verzeichnis anlegen (Beispiel):
+
+```bash
+sudo mkdir -p /var/cache/yocto/{bitbake,downloads,sstate,tmp,xsct}
+sudo chown -R 1000:1000 /var/cache/yocto
+```
+
+2. In `.devcontainer/devcontainer.json` einen Bind-Mount und die Variable setzen:
+
+```jsonc
+{
+  "mounts": [
+    "source=/var/cache/yocto,target=/workspaces/yocto-cache,type=bind"
+  ],
+  "containerEnv": {
+    "KIRA_BITBAKE_CACHE_DIR": "/workspaces/yocto-cache/bitbake",
+    "DL_DIR": "/workspaces/yocto-cache/downloads",
+    "SSTATE_DIR": "/workspaces/yocto-cache/sstate",
+    "TMPDIR": "/workspaces/yocto-cache/tmp",
+    "XSCT_STAGING_DIR": "/workspaces/yocto-cache/xsct"
+  }
+}
+```
+
+3. Dev Container neu bauen (`Dev Containers: Rebuild Container`).
+
+Hinweis: Für mehrere Projekte kann derselbe Host-Pfad genutzt werden, solange
+die Nutzerrechte passen und ausreichend Speicher vorhanden ist.
+
+### Build command variants
+
+Default (recommended):
+
+```bash
+ACCEPT_XILINX_LICENSE=1 ./scripts/build-xilinx-image.sh
+```
+
+With explicit override variables:
+
+```bash
+ACCEPT_XILINX_LICENSE=1 \
+KIRA_BITBAKE_CACHE_DIR=/tmp/bitbake-cache \
+DL_DIR=/tmp/yocto-downloads \
+SSTATE_DIR=/tmp/yocto-sstate-cache \
+TMPDIR=/tmp/yocto-tmp \
+XSCT_STAGING_DIR=/tmp/yocto-xsct \
+./scripts/build-xilinx-image.sh
+```
+
+### Workspace cleanup
+
+Remove local workspace build artefacts and stale checkouts:
+
+```bash
+./scripts/cleanup-yocto-workspace.sh
+```
+
+Also remove `/tmp` Yocto caches used by this repository:
+
+```bash
+./scripts/cleanup-yocto-workspace.sh --tmp
+```
+
 ### Adding a package to the image
 
-Edit `kas/k26-smk.yml` and append the package to `local_conf_footer`:
+Edit `kas/k26-smk.yml` and append the package to `local_conf_header.general`:
 
 ```yaml
-local_conf_footer:
+local_conf_header:
   general: |
     IMAGE_INSTALL:append = " htop vim"
 ```
@@ -182,8 +269,8 @@ kas build kas/k26-smk.yml
 
 ### Switching the Yocto release
 
-Change the `refspec` values in `kas/k26-smk.yml` from `mickledore` to the
-desired release branch (e.g., `langdale`), then rebuild.
+Change the `refspec` values in `kas/k26-smk.yml` consistently across all layers
+and adjust `LAYERSERIES_COMPAT` in custom layers if needed, then rebuild.
 
 ---
 
