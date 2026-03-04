@@ -1,0 +1,56 @@
+{
+  "name": "Kria K26 Yocto Dev Environment",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+
+  // ── Workspace mount ─────────────────────────────────────────────────────────
+  // The repository root is mounted at /workspaces/${localWorkspaceFolderBasename}.
+  // A named volume is used for the Yocto build directory so that large build
+  // artefacts (tens of GBs) are stored in a Docker volume and survive container
+  // rebuilds without polluting the host checkout.
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  "mounts": [
+    // Persistent Yocto build volume (~50–100 GB for a full build)
+    "source=kira-yocto-build,target=/workspaces/${localWorkspaceFolderBasename}/build,type=volume",
+    // Persistent download cache so layers are not fetched on every build
+    "source=kira-yocto-dl,target=/workspaces/${localWorkspaceFolderBasename}/downloads,type=volume"
+  ],
+
+  // ── Resource requirements ────────────────────────────────────────────────────
+  // Yocto builds are CPU- and memory-intensive.  Docker Desktop users should
+  // allocate at least 8 GB RAM and 4 CPU cores (16 GB / 8 cores recommended).
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "64gb"
+  },
+
+  // ── Run as the non-root "builder" user ────────────────────────────────────
+  "remoteUser": "builder",
+
+  // ── VS Code extensions ───────────────────────────────────────────────────
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode-remote.remote-containers",
+        "yocto-project.yocto-bitbake",
+        "ms-python.python",
+        "redhat.vscode-yaml",
+        "EditorConfig.EditorConfig",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true,
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+      }
+    }
+  },
+
+  // ── Post-create: verify kas is available ────────────────────────────────────
+  "postCreateCommand": "kas --version && echo '✅ KAS is ready. Run: kas build kas/k26-smk.yml'"
+}
